@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>평생학습관 시간표 관리 시스템</title>
+    <!-- SheetJS (Excel Read) -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- html2pdf.js (PDF Export) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <style>
+        * { box-sizing: border-box; font-family: 'Pretendard', 'Noto Sans KR', sans-serif; }
+        body { margin: 0; padding: 10px; background-color: #f4f6f9; color: #333; }
+        
+        /* 비밀번호 모달 */
+        #loginModal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center; z-index: 9999;
+        }
+        .login-box {
+            background: #fff; padding: 30px; border-radius: 12px; text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15); width: 320px;
+        }
+        .login-box h3 { margin-top: 0; color: #2c3e50; }
+        .login-box input {
+            width: 100%; padding: 10px; margin: 15px 0; border: 1px solid #ccc; border-radius: 6px; text-align: center; font-size: 16px;
+        }
+        .login-box button {
+            width: 100%; padding: 10px; background: #3498db; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;
+        }
+
+        /* 메인 컨테이너 */
+        .container { max-width: 100%; margin: 0 auto; background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        
+        /* 상단 컨트롤 영역 */
+        .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
+        .info-area { font-size: 12px; color: #666; font-weight: 600; }
+        .btn-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+        
+        select, button, label.btn-upload {
+            padding: 5px 10px; border-radius: 4px; border: 1px solid #dcdfe6; font-size: 12px; font-weight: bold; cursor: pointer; transition: all 0.2s;
+            display: inline-flex; align-items: center; justify-content: center;
+        }
+        select { background: #fff; }
+        .btn-upload { background-color: #34495e; color: white; border: none; }
+        .btn-pdf { background-color: #e74c3c; color: white; border: none; }
+        .btn-copy { background-color: #8e44ad; color: white; border: none; }
+        .btn-save { background-color: #2980b9; color: white; border: none; }
+        
+        /* 시간표 테이블 설정 */
+        .table-wrapper { overflow-x: auto; margin-top: 2px; }
+        table { width: 100%; border-collapse: collapse; text-align: center; font-size: 8px; table-layout: fixed; }
+        th, td { border: 1px solid #ccc; padding: 1px; vertical-align: middle; word-break: break-all; }
+        th { background-color: #f2f4f7; font-weight: bold; color: #333; height: 22px; font-size: 9px; }
+        th.day-header { background-color: #e9ecef; width: 22px; }
+        th.time-header { background-color: #e9ecef; width: 45px; }
+        th.period-header { background-color: #e9ecef; width: 30px; }
+        
+        tr.has-data-row { height: 20px; }
+        tr.empty-row { height: 10px; background-color: #fafafa; }
+        tr.empty-row td { padding: 0; font-size: 7px; color: #ccc; border-color: #eee; }
+
+        .cell-content { display: flex; flex-direction: column; justify-content: center; height: 100%; cursor: pointer; border-radius: 2px; padding: 1px; }
+        .cell-content:hover { outline: 1px solid #3498db; }
+        .title { font-weight: bold; font-size: 8px; margin-bottom: 1px; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .date { font-size: 7px; line-height: 1; opacity: 0.9; }
+        .time { font-size: 7px; line-height: 1; opacity: 0.9; }
+
+        /* 편집 모달 */
+        #editModal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.5); display: none; justify-content: center; align-items: center; z-index: 10000;
+        }
+        .edit-box { background: white; padding: 20px; border-radius: 8px; width: 420px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .edit-box h4 { margin-top: 0; margin-bottom: 10px; }
+        .edit-box label { display: block; font-size: 11px; font-weight: bold; margin-top: 8px; margin-bottom: 3px; text-align: left; }
+        .edit-box input[type="text"] { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+        .edit-box input[type="color"] { width: 100%; height: 30px; border: none; cursor: pointer; }
+        
+        .color-palette { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-top: 6px; }
+        .color-btn { height: 24px; border: 1px solid rgba(0,0,0,0.15); border-radius: 3px; cursor: pointer; transition: transform 0.1s; }
+        .color-btn:hover { transform: scale(1.15); z-index: 1; }
+
+        .edit-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 15px; }
+
+        @media print {
+            @page { size: A3 portrait; margin: 5mm; }
+            body { padding: 0; background: white; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .header-bar button, .header-bar select, .header-bar label, #loginModal, #editModal { display: none !important; }
+            .container { box-shadow: none; padding: 0; width: 100%; max-width: none; }
+            table { font-size: 7.5px; width: 100%; }
+            th { height: 18px; font-size: 8.5px; }
+            tr.has-data-row { height: 18px; }
+            tr.empty-row { height: 8px; }
+            .title { font-size: 7.5px; }
+            .date, .time { font-size: 6.5px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 비밀번호 인증 모달 -->
+    <div id="loginModal">
+        <div class="login-box">
+            <h3>시간표 시스템 접속</h3>
+            <p style="font-size: 12px; color: #666;">비밀번호를 입력해 주세요.</p>
+            <input type="password" id="pwInput" placeholder="비밀번호 입력" onkeydown="if(event.key==='Enter') checkPassword()">
+            <button onclick="checkPassword()">로그인</button>
+        </div>
+    </div>
+
+    <!-- 메인 컨테이너 -->
+    <div class="container" id="printableArea">
+        <div class="header-bar">
+            <div>
+                <h2 style="margin: 0 0 2px 0; font-size: 16px;" id="tableTitle">평생학습관 시간표</h2>
+                <div class="info-area">최근 수정: <span id="lastUpdated">작성 기록 없음</span></div>
+            </div>
+            
+            <div class="btn-group">
+                <select id="yearSelect" onchange="changeDate()">
+                    <script>
+                        for(let y=2026; y<=2035; y++) {
+                            const selected = (y === 2026) ? 'selected' : '';
+                            document.write(`<option value="${y}" ${selected}>${y}년</option>`);
+                        }
+                    </script>
+                </select>
+
+                <select id="monthSelect" onchange="changeDate()">
+                    <script>
+                        for(let i=1; i<=12; i++) {
+                            const selected = (i === 9) ? 'selected' : '';
+                            document.write(`<option value="${i}" ${selected}>${i}월 시간표</option>`);
+                        }
+                    </script>
+                </select>
+
+                <label class="btn-upload">
+                    📂 엑셀 파일 불러오기
+                    <input type="file" id="excelFileInput" accept=".xlsx, .xls" style="display: none;" onchange="importExcelData(event)">
+                </label>
+
+                <button class="btn-copy" onclick="copyPreviousMonth()">전달 내용 복사</button>
+                <button class="btn-pdf" onclick="exportPDF()">PDF (A3 세로)</button>
+            </div>
+        </div>
+
+        <!-- 시간표 테이블 -->
+        <div class="table-wrapper">
+            <table id="scheduleTable">
+                <thead>
+                    <tr id="roomHeaderRow">
+                        <th class="day-header">요일</th>
+                        <th class="time-header">시간</th>
+                        <th class="period-header">교시</th>
+                    </tr>
+                </thead>
+                <tbody id="scheduleBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 수정 모달 -->
+    <div id="editModal">
+        <div class="edit-box">
+            <h4>강좌 정보 및 바탕색 수정</h4>
+            <label>첫번째 줄: 과정명 (최대 20자)</label>
+            <input type="text" id="editTitle" placeholder="예: 무룡서당" maxlength="20">
+            
+            <label>두번째 줄: 교육일자/기간</label>
+            <input type="text" id="editDate" placeholder="예: (1/26 ~ 1/30)">
+            
+            <label>세번째 줄: 교육시간</label>
+            <input type="text" id="editTime" placeholder="예: (10:00~12:00)">
+            
+            <label>소요 시간 (셀 병합)</label>
+            <select id="editSpan" style="width:100%; padding:6px; margin-top:2px;">
+                <option value="1">1시간 (1칸)</option>
+                <option value="2" selected>2시간 (2칸 병합)</option>
+                <option value="3">3시간 (3칸 병합)</option>
+            </select>
+
+            <label>바탕색 선택 (20가지 팔레트)</label>
+            <input type="color" id="editColor" value="#ffffff">
+            <div class="color-palette" id="colorPalette"></div>
+
+            <div class="edit-buttons">
+                <button onclick="closeEditModal()" style="background:#ccc; border:none; padding: 6px 12px; border-radius:4px;">취소</button>
+                <button onclick="clearCellData()" style="background:#e74c3c; color:white; border:none; padding: 6px 12px; border-radius:4px;">초기화</button>
+                <button onclick="saveCellData()" class="btn-save" style="padding: 6px 12px; border-radius:4px;">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const rooms = [
+            "1층 SW미래채움", "1층 유비캠", "1층 회의실", "2층 동아리실", 
+            "2층 2실습실", "2층 요리조리실", "2층 3학습실", "3층 3실습실", 
+            "3층 4학습실", "4층 IT룸", "4층 누림터", "4층 5학습실"
+        ];
+
+        const days = ["월", "화", "수", "목", "금", "토"];
+        const times = [
+            "09:00", "10:00", "11:00", "12:00", "13:00", 
+            "14:00", "15:00", "16:00", "17:00", "18:00", 
+            "19:00", "20:00", "21:00"
+        ];
+
+        const colorPaletteList = [
+            "#ffffff", "#fbe5d7", "#e2f0d9", "#99ccff", "#cc99ff",
+            "#fff2cc", "#f8cecc", "#dae8fc", "#d5e8d4", "#e1d5e7",
+            "#ffe6cc", "#d0cee5", "#b1ddf1", "#cbeb1e", "#f3c1c6",
+            "#2c3e50", "#27ae60", "#8e44ad", "#c0392b", "#d35400"
+        ];
+
+        let currentYear = 2026;
+        let currentMonth = 9;
+        let scheduleData = {}; 
+        let targetCellInfo = null;
+
+        function getCurrentKey() {
+            return `${currentYear}_${currentMonth}`;
+        }
+
+        function getContrastYIQ(hexcolor){
+            if (!hexcolor || hexcolor === '#ffffff') return '#000000';
+            hexcolor = hexcolor.replace("#", "");
+            if(hexcolor.length === 3) {
+                hexcolor = hexcolor.split('').map(c => c + c).join('');
+            }
+            const r = parseInt(hexcolor.substr(0,2),16);
+            const g = parseInt(hexcolor.substr(2,2),16);
+            const b = parseInt(hexcolor.substr(4,2),16);
+            const yiq = ((r*299)+(g*587)+(b*114))/1000;
+            return (yiq >= 128) ? '#000000' : '#ffffff';
+        }
+
+        function checkPassword() {
+            const input = document.getElementById('pwInput').value;
+            if (input === '2417396') {
+                document.getElementById('loginModal').style.display = 'none';
+                initApp();
+            } else {
+                alert('비밀번호가 올바르지 않습니다.');
+            }
+        }
+
+        function initApp() {
+            initPaletteUI();
+            const savedData = localStorage.getItem('schedule_data_v8');
+            if (savedData) {
+                scheduleData = JSON.parse(savedData);
+            } else {
+                scheduleData = createExcelBasedData();
+            }
+            buildTableHeader();
+            renderSchedule();
+        }
+
+        function initPaletteUI() {
+            const paletteDiv = document.getElementById('colorPalette');
+            paletteDiv.innerHTML = '';
+            colorPaletteList.forEach(color => {
+                const btn = document.createElement('div');
+                btn.className = 'color-btn';
+                btn.style.backgroundColor = color;
+                btn.onclick = () => setQuickColor(color);
+                paletteDiv.appendChild(btn);
+            });
+        }
+
+        function buildTableHeader() {
+            const row = document.getElementById('roomHeaderRow');
+            rooms.forEach(room => {
+                const th = document.createElement('th');
+                th.textContent = room;
+                row.appendChild(th);
+            });
+        }
+
+        function renderSchedule() {
+            const tbody = document.getElementById('scheduleBody');
+            tbody.innerHTML = '';
+
+            const dataKey = getCurrentKey();
+            const monthData = scheduleData[dataKey] || {};
+            document.getElementById('lastUpdated').textContent = monthData.lastUpdated || '수정 기록 없음';
+            document.getElementById('tableTitle').textContent = `평생학습관 시간표 (${currentYear}년 ${currentMonth}월)`;
+
+            days.forEach((day) => {
+                // 병합 처리를 추적하는 맵
+                const skipMap = {};
+                times.forEach((_, idx) => {
+                    const p = idx + 1;
+                    rooms.forEach(r => skipMap[`${p}_${r}`] = false);
+                });
+
+                times.forEach((timeStr, timeIdx) => {
+                    const periodNum = timeIdx + 1;
+                    
+                    let hasDataInRow = false;
+                    rooms.forEach(room => {
+                        const cellKey = `${day}_${periodNum}_${room}`;
+                        if (monthData.cells && monthData.cells[cellKey] && monthData.cells[cellKey].title) {
+                            hasDataInRow = true;
+                        }
+                    });
+
+                    const tr = document.createElement('tr');
+                    tr.className = hasDataInRow ? 'has-data-row' : 'empty-row';
+
+                    if (timeIdx === 0) {
+                        const tdDay = document.createElement('td');
+                        tdDay.rowSpan = times.length;
+                        tdDay.textContent = day;
+                        tdDay.style.fontWeight = 'bold';
+                        tdDay.style.backgroundColor = '#f8f9fa';
+                        tr.appendChild(tdDay);
+                    }
+
+                    const tdTime = document.createElement('td');
+                    tdTime.textContent = timeStr;
+                    tr.appendChild(tdTime);
+
+                    const tdPeriod = document.createElement('td');
+                    tdPeriod.textContent = `${periodNum}교시`;
+                    tr.appendChild(tdPeriod);
+
+                    rooms.forEach((room) => {
+                        if (skipMap[`${periodNum}_${room}`]) return;
+
+                        const td = document.createElement('td');
+                        const cellKey = `${day}_${periodNum}_${room}`;
+                        const cellData = monthData.cells ? monthData.cells[cellKey] : null;
+
+                        let rowSpan = cellData && cellData.rowSpan ? parseInt(cellData.rowSpan, 10) : 1;
+                        
+                        if (rowSpan > 1) {
+                            td.rowSpan = rowSpan;
+                            for (let i = 1; i < rowSpan; i++) {
+                                skipMap[`${periodNum + i}_${room}`] = true;
+                            }
+                        }
+
+                        const contentDiv = document.createElement('div');
+                        contentDiv.className = 'cell-content';
+                        
+                        if (cellData && cellData.title) {
+                            const bgColor = cellData.color || '#ffffff';
+                            const textColor = getContrastYIQ(bgColor);
+                            
+                            if (bgColor !== '#ffffff') {
+                                td.style.backgroundColor = bgColor;
+                            }
+                            td.style.color = textColor;
+                            
+                            contentDiv.innerHTML = `
+                                <div class="title" style="color:${textColor}" title="${cellData.title}">${cellData.title || ''}</div>
+                                <div class="date" style="color:${textColor}">${cellData.date || ''}</div>
+                                <div class="time" style="color:${textColor}">${cellData.time || ''}</div>
+                            `;
+                        }
+
+                        td.onclick = () => openEditModal(day, periodNum, room, cellData);
+                        td.appendChild(contentDiv);
+                        tr.appendChild(td);
+                    });
+
+                    tbody.appendChild(tr);
+                });
+            });
+        }
+
+        function parseTimeAndSpan(timeStr) {
+            let cleanTime = timeStr ? String(timeStr).trim().replace(/[()]/g, '') : '';
+            
+            // 야간수업 18:50~20:40 -> 19:00~21:00 자동 변환
+            if (cleanTime.includes('18:50') || cleanTime.includes('20:40')) {
+                cleanTime = '19:00~21:00';
+            }
+
+            let startHour = 10;
+            let endHour = 12;
+            let rowSpan = 2;
+
+            const timeMatch = cleanTime.match(/(\d{1,2}):(\d{2})\s*~\s*(\d{1,2}):(\d{2})/);
+            if (timeMatch) {
+                startHour = parseInt(timeMatch[1], 10);
+                const startMin = parseInt(timeMatch[2], 10);
+                endHour = parseInt(timeMatch[3], 10);
+                const endMin = parseInt(timeMatch[4], 10);
+
+                let diff = (endHour + endMin / 60) - (startHour + startMin / 60);
+                rowSpan = Math.max(1, Math.round(diff));
+            } else {
+                const singleHourMatch = cleanTime.match(/(\d{1,2}):/);
+                if (singleHourMatch) {
+                    startHour = parseInt(singleHourMatch[1], 10);
+                }
+            }
+
+            let period = startHour >= 9 && startHour <= 21 ? startHour - 8 : 2;
+            return { period, rowSpan, formattedTime: `(${cleanTime})` };
+        }
+
+        function importExcelData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+
+                if (jsonData.length === 0) {
+                    alert('엑셀 파일에 데이터가 없습니다.');
+                    return;
+                }
+
+                const dataKey = getCurrentKey();
+                if (!scheduleData[dataKey]) {
+                    scheduleData[dataKey] = { cells: {}, lastUpdated: '' };
+                }
+
+                let count = 0;
+                jsonData.forEach(row => {
+                    const rawTitle = row['프로그램명'] || row['과정명'] || row['강좌명'] || '';
+                    const date = row['강의일자'] || row['교육기간'] || row['교육일자'] || '';
+                    const time = row['강의시간'] || row['교육시간'] || row['시간'] || '';
+                    const day = (row['강의요일'] || row['교육요일'] || row['요일'] || '').trim().replace('요일', '');
+                    const room = (row['강의실'] || row['장소'] || '').trim();
+
+                    if (!rawTitle) return;
+
+                    let title = String(rawTitle).trim();
+                    if (title.length > 20) {
+                        title = title.substring(0, 20) + '...';
+                    }
+
+                    const { period, rowSpan, formattedTime } = parseTimeAndSpan(time);
+                    const matchedRoom = rooms.find(r => r.includes(room) || room.includes(r)) || room;
+
+                    if (days.includes(day) && rooms.includes(matchedRoom)) {
+                        const cellKey = `${day}_${period}_${matchedRoom}`;
+                        scheduleData[dataKey].cells[cellKey] = {
+                            title: title,
+                            date: date ? (String(date).startsWith('(') ? date : `(${date})`) : '',
+                            time: time ? formattedTime : '',
+                            rowSpan: rowSpan,
+                            color: '#e2f0d9'
+                        };
+                        count++;
+                    }
+                });
+
+                updateLastModified();
+                localStorage.setItem('schedule_data_v8', JSON.stringify(scheduleData));
+                renderSchedule();
+                alert(`${count}개의 강좌 데이터가 성공적으로 자동 입력되었습니다!`);
+            };
+            reader.readAsArrayBuffer(file);
+            event.target.value = '';
+        }
+
+        function openEditModal(day, period, room, data) {
+            targetCellInfo = { day, period, room };
+            document.getElementById('editTitle').value = data ? data.title || '' : '';
+            document.getElementById('editDate').value = data ? data.date || '' : '';
+            document.getElementById('editTime').value = data ? data.time || '' : '';
+            document.getElementById('editSpan').value = data && data.rowSpan ? data.rowSpan : '2';
+            document.getElementById('editColor').value = data ? data.color || '#ffffff' : '#ffffff';
+            document.getElementById('editModal').style.display = 'flex';
+        }
+
+        function setQuickColor(color) {
+            document.getElementById('editColor').value = color;
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+
+        function saveCellData() {
+            if (!targetCellInfo) return;
+            const { day, period, room } = targetCellInfo;
+            const cellKey = `${day}_${period}_${room}`;
+            const dataKey = getCurrentKey();
+
+            if (!scheduleData[dataKey]) {
+                scheduleData[dataKey] = { cells: {}, lastUpdated: '' };
+            }
+
+            let title = document.getElementById('editTitle').value.trim();
+            if (title.length > 20) {
+                title = title.substring(0, 20) + '...';
+            }
+
+            let time = document.getElementById('editTime').value;
+            if (time.includes('18:50') || time.includes('20:40')) {
+                time = time.replace('18:50', '19:00').replace('20:40', '21:00');
+            }
+
+            const date = document.getElementById('editDate').value;
+            const rowSpan = parseInt(document.getElementById('editSpan').value, 10);
+            const color = document.getElementById('editColor').value;
+
+            scheduleData[dataKey].cells[cellKey] = { title, date, time, rowSpan, color };
+            
+            updateLastModified();
+            localStorage.setItem('schedule_data_v8', JSON.stringify(scheduleData));
+            closeEditModal();
+            renderSchedule();
+        }
+
+        function clearCellData() {
+            if (!targetCellInfo) return;
+            const { day, period, room } = targetCellInfo;
+            const cellKey = `${day}_${period}_${room}`;
+            const dataKey = getCurrentKey();
+
+            if (scheduleData[dataKey] && scheduleData[dataKey].cells[cellKey]) {
+                delete scheduleData[dataKey].cells[cellKey];
+                updateLastModified();
+                localStorage.setItem('schedule_data_v8', JSON.stringify(scheduleData));
+            }
+            closeEditModal();
+            renderSchedule();
+        }
+
+        function updateLastModified() {
+            const now = new Date();
+            const formatted = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+            
+            const dataKey = getCurrentKey();
+            if (!scheduleData[dataKey]) {
+                scheduleData[dataKey] = { cells: {}, lastUpdated: '' };
+            }
+            scheduleData[dataKey].lastUpdated = formatted;
+        }
+
+        function changeDate() {
+            currentYear = parseInt(document.getElementById('yearSelect').value, 10);
+            currentMonth = parseInt(document.getElementById('monthSelect').value, 10);
+            renderSchedule();
+        }
+
+        function copyPreviousMonth() {
+            let prevYear = currentYear;
+            let prevMonth = currentMonth - 1;
+            if (prevMonth === 0) {
+                prevMonth = 12;
+                prevYear -= 1;
+            }
+
+            const prevKey = `${prevYear}_${prevMonth}`;
+            const currentKey = getCurrentKey();
+
+            if (!scheduleData[prevKey] || !scheduleData[prevKey].cells || Object.keys(scheduleData[prevKey].cells).length === 0) {
+                alert(`${prevYear}년 ${prevMonth}월 데이터가 존재하지 않아 복사할 수 없습니다.`);
+                return;
+            }
+
+            if (confirm(`${prevYear}년 ${prevMonth}월의 내용을 그대로 복사하여 ${currentYear}년 ${currentMonth}월에 덮어쓰시겠습니까?`)) {
+                scheduleData[currentKey] = JSON.parse(JSON.stringify(scheduleData[prevKey]));
+                updateLastModified();
+                localStorage.setItem('schedule_data_v8', JSON.stringify(scheduleData));
+                renderSchedule();
+                alert(`${prevYear}년 ${prevMonth}월의 시간표 및 바탕색 정보가 ${currentYear}년 ${currentMonth}월로 복사되었습니다.`);
+            }
+        }
+
+        function exportPDF() {
+            const element = document.getElementById('printableArea');
+            const opt = {
+                margin:       3,
+                filename:     `평생학습관_시간표_${currentYear}년_${currentMonth}월.pdf`,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'mm', format: 'a3', orientation: 'portrait' }
+            };
+            html2pdf().set(opt).from(element).save();
+        }
+
+        function createExcelBasedData() {
+            return {
+                "2026_9": {
+                    lastUpdated: '2026-09-04 17:00:00',
+                    cells: {
+                        "월_6_3층 3실습실": { title: "[시민학사] 딥펜 캘리그라피로...", date: "(8/31~9/28)", time: "(14:00~16:00)", rowSpan: 2, color: "#e2f0d9" },
+                        "화_2_3층 3실습실": { title: "[시민학사] 오일파스텔로 그리는...", date: "(9/8~9/29)", time: "(10:00~12:00)", rowSpan: 2, color: "#fbe5d7" },
+                        "수_6_2층 요리조리실": { title: "[시민학사] 과일로 빚는 수제막걸리(2)", date: "(9/9)", time: "(14:00~16:00)", rowSpan: 2, color: "#fff2cc" }
+                    }
+                }
+            };
+        }
+    </script>
+</body>
+</html>
